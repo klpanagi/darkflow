@@ -44,3 +44,6 @@ ckpt/*
 
 #pytest cache
 .cache/
+
+# Cython generated shared objects
+*.so
