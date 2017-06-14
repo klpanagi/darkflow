@@ -6,11 +6,14 @@ from .ops import op_create, identity
 from .ops import HEADER, LINE
 from .framework import create_framework
 from darkflow.dark.darknet import Darknet
+from darkflow.utils.loader import create_loader
 import json
 import os
 
 
 class TFNet(object):
+
+    OLD_GRAPH_MSG = 'Resolving old graph def {} (no guarantee)'
 
     _TRAINER = dict({
         'rmsprop': tf.train.RMSPropOptimizer,
@@ -31,8 +34,6 @@ class TFNet(object):
     predict = flow.predict
     return_predict = flow.return_predict
     to_darknet = help.to_darknet
-    build_train_op = help.build_train_op
-    load_from_ckpt = help.load_from_ckpt
 
     def __init__(self, FLAGS, darknet=None):
         self.ntrain = 0
@@ -71,11 +72,14 @@ class TFNet(object):
         device_name = FLAGS.gpuName if FLAGS.gpu > 0.0 else None
         with tf.device(device_name):
             with self.graph.as_default() as g:
+                # Create the Network
                 self.build_forward()
+                # Perform meta-operations like summary.
                 self.setup_meta_ops()
         self.say('Finished in {}s\n'.format(time.time() - start))
 
     def build_from_pb(self):
+        """TODO documentation"""
         with tf.gfile.FastGFile(self.FLAGS.pbLoad, "rb") as f:
             graph_def = tf.GraphDef()
             graph_def.ParseFromString(f.read())
@@ -93,6 +97,7 @@ class TFNet(object):
         self.setup_meta_ops()
 
     def build_forward(self):
+        """Creates the network"""
         verbalise = self.FLAGS.verbalise
 
         # Placeholders
@@ -113,10 +118,12 @@ class TFNet(object):
             self.say(mess)
         self.say(LINE)
 
+        # Keep the last layer
         self.top = flayer
         self.out = tf.identity(flayer.out, name='output')
 
     def setup_meta_ops(self):
+        """ TODO Documentation"""
         cfg = dict({
             'allow_soft_placement': False,
             'log_device_placement': False
@@ -175,3 +182,43 @@ class TFNet(object):
         self.say('Saving const graph def to {}'.format(name))
         graph_def = tfnet_pb.sess.graph_def
         tf.train.write_graph(graph_def, './', name, False)
+
+    def build_train_op(self):
+        self.framework.loss(self.out)
+        self.say('Building {} train op'.format(self.meta['model']))
+        self.learning_rate = tf.placeholder(tf.float32, shape=[])
+        optimizer = self._TRAINER[self.FLAGS.trainer](self.learning_rate)
+        gradients = optimizer.compute_gradients(self.framework.loss)
+        self.train_op = optimizer.apply_gradients(gradients)
+
+    def load_from_ckpt(self):
+        if self.FLAGS.load < 0:  # load lastest ckpt
+            with open(self.FLAGS.backup + 'checkpoint', 'r') as f:
+                last = f.readlines()[-1].strip()
+                load_point = last.split(' ')[1]
+                load_point = load_point.split('"')[1]
+                load_point = load_point.split('-')[-1]
+                self.FLAGS.load = int(load_point)
+
+        load_point = os.path.join(self.FLAGS.backup, self.meta['name'])
+        load_point = '{}-{}'.format(load_point, self.FLAGS.load)
+        self.say('Loading from {}'.format(load_point))
+        try:
+            self.saver.restore(self.sess, load_point)
+        except:
+            self.load_old_graph(load_point)
+
+    def load_old_graph(self, ckpt):
+        ckpt_loader = create_loader(ckpt)
+        self.say(self.OLD_GRAPH_MSG.format(ckpt))
+
+        for var in tf.global_variables():
+            name = var.name.split(':')[0]
+            args = [name, var.get_shape()]
+            val = ckpt_loader(args)
+            assert val is not None, 'Cannot find and load {}'.format(var.name)
+            shp = val.shape
+            plh = tf.placeholder(tf.float32, shp)
+            op = tf.assign(var, plh)
+            self.sess.run(op, {plh: val})
+

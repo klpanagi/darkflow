@@ -76,7 +76,14 @@ def train(self):
                 i + 1, new_lr))
 
         fetches = [self.train_op, loss_op, self.summary_op]
+        start = time.time()
         fetched = self.sess.run(fetches, feed_dict)
+        stop = time.time()
+        elapsed = stop - start
+
+        # tf.logging.info("Single training cycle completed in: {0}", elapsed)
+        self.say("Single training cycle completed in: {0} seconds".format(elapsed))
+
         loss = fetched[1]
 
         if loss_mva is None:
@@ -88,12 +95,12 @@ def train(self):
 
         salOp = salience_map_op(self.inp, self.out)
         salMap = self.sess.run(salOp, feed_dict)
-        print(salMap[0].shape)
+
         imArray = salMap[0][0, :, :, :]
         img = Image.fromarray(np.uint8(imArray))
         img.save('saliency.png')
 
-        form = 'step {} - loss {} - moving ave loss {}'
+        form = '[Step #{}]: Loss {}, Moving Average Loss {}'
         self.say(form.format(step_now, loss, loss_mva))
         profile += [(loss, loss_mva)]
 

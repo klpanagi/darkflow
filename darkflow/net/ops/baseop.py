@@ -51,41 +51,48 @@ class BaseOp(object):
         @type feed
         @param feed
         """
-        for var in self.lay.wshape:
-            self.wrap_variable(var)
+        for idx in self.lay.wshape:
+            self._wrap_variable(idx)
         for ph in self.lay.h:
-            self.wrap_pholder(ph, feed)
+            self._wrap_pholder(ph, feed)
 
-    def wrap_variable(self, var):
-        """wrap layer.w into variables"""
-        val = self.lay.w.get(var, None)
+    def _wrap_variable(self, varidx):
+        """Wrap Darknet layer weights into a Tensorflow Variable.
+
+        For more information on Tensorflow Variables:
+            https://www.tensorflow.org/programmers_guide/variables
+
+        @type var
+        @param var
+        """
+        val = self.lay.w.get(varidx, None)
         if val is None:
-            shape = self.lay.wshape[var]
+            shape = self.lay.wshape[varidx]
             args = [0., 1e-2, shape]
-            if 'moving_mean' in var:
+            if 'moving_mean' in varidx:
                 val = np.zeros(shape)
-            elif 'moving_variance' in var:
+            elif 'moving_variance' in varidx:
                 val = np.ones(shape)
             else:
                 val = np.random.normal(*args)
-            self.lay.w[var] = val.astype(np.float32)
+            self.lay.w[varidx] = val.astype(np.float32)
             self.act = 'Init '
         if not self.var:
             return
 
-        val = self.lay.w[var]
-        self.lay.w[var] = tf.constant_initializer(val)
-        if var in self._SLIM:
+        val = self.lay.w[varidx]
+        self.lay.w[varidx] = tf.constant_initializer(val)
+        if varidx in self._SLIM:
             return
         with tf.variable_scope(self.scope):
-            self.lay.w[var] = tf.get_variable(
-                var,
-                shape=self.lay.wshape[var],
+            self.lay.w[varidx] = tf.get_variable(
+                varidx,
+                shape=self.lay.wshape[varidx],
                 dtype=tf.float32,
-                initializer=self.lay.w[var])
+                initializer=self.lay.w[varidx])
 
-    def wrap_pholder(self, ph, feed):
-        """wrap layer.h into placeholders"""
+    def _wrap_pholder(self, ph, feed):
+        """wrap Darknet layer.h into Tensorflow placeholders"""
         phtype = type(self.lay.h[ph])
         if phtype is not dict:
             return
