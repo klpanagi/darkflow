@@ -47,3 +47,8 @@ ckpt/*
 
 # Cython generated shared objects
 *.so
+
+# Compressed
+*.tar
+*.tar.*
+*.zip
